@@ -1,84 +1,84 @@
 # core-banking-ledger
 
-Scaffolding di un servizio di ledger bancario, costruito con Spring Boot 3 e Java 21.
-Il progetto espone (in futuro) API REST per la gestione di conti, transazioni e audit trail,
-con autenticazione basata su JWT e persistenza su PostgreSQL.
+Scaffolding for a core banking ledger service, built with Spring Boot 3 and Java 21.
+The project will expose REST APIs for managing accounts, transactions and audit trails,
+with JWT-based authentication and PostgreSQL persistence.
 
-> Stato attuale: solo scaffolding tecnico (build, configurazione, struttura a package).
-> Nessuna logica di dominio è ancora implementata.
+> Current status: technical scaffolding only (build, configuration, package structure).
+> No domain logic has been implemented yet.
 
-## Stack tecnico
+## Tech stack
 
 - Java 21
 - Spring Boot 3 (Web, Data JPA, Security, Validation)
-- PostgreSQL + Flyway (migrazioni schema)
+- PostgreSQL + Flyway (schema migrations)
 - springdoc-openapi (Swagger UI)
-- JJWT (gestione token JWT)
-- Testcontainers (test di integrazione con PostgreSQL reale)
+- JJWT (JWT token handling)
+- Testcontainers (integration tests against a real PostgreSQL instance)
 - Lombok
 - Maven
 
-## Struttura dei package
+## Package structure
 
 ```
 com.eugeniokg.corebankingledger
-├── config       # configurazione applicativa (beans, OpenAPI, ecc.)
-├── security     # autenticazione, autorizzazione, JWT
-├── account      # dominio conti
-├── transaction  # dominio transazioni/movimenti di ledger
-├── audit        # audit trail e compliance
-└── common       # componenti condivisi (entità base, eccezioni, utility)
+├── config       # application configuration (beans, OpenAPI, etc.)
+├── security     # authentication, authorization, JWT
+├── account      # account domain
+├── transaction  # transaction/ledger movement domain
+├── audit        # audit trail and compliance
+└── common       # shared building blocks (base entities, exceptions, utilities)
 ```
 
-## Setup ambiente di sviluppo
+## Development setup
 
-### Prerequisiti
+### Prerequisites
 
 - JDK 21
-- Docker (per PostgreSQL locale e per i test con Testcontainers)
-- Maven (oppure il wrapper `mvnw` incluso nel progetto)
+- Docker (for local PostgreSQL and Testcontainers tests)
+- Maven (or the `mvnw` wrapper included in the project)
 
-### Avvio del database locale
+### Starting the local database
 
 ```bash
 docker compose up -d
 ```
 
-Avvia un container PostgreSQL su `localhost:5432` con:
+Starts a PostgreSQL container on `localhost:5432` with:
 - database: `core_banking_ledger`
-- utente: `ledger`
+- user: `ledger`
 - password: `ledger`
 
-### Avvio dell'applicazione
+### Running the application
 
 ```bash
 mvn spring-boot:run
 ```
 
-Di default viene attivato il profilo `dev`, che si connette al PostgreSQL locale avviato con
-Docker Compose. L'API sarà disponibile su `http://localhost:8080` e la documentazione
-OpenAPI su `http://localhost:8080/swagger-ui.html`.
+The `dev` profile is active by default, connecting to the local PostgreSQL instance started
+via Docker Compose. The API will be available at `http://localhost:8080` and the OpenAPI
+documentation at `http://localhost:8080/swagger-ui.html`.
 
-### Test
+### Tests
 
-I test di integrazione usano il profilo `test` e Testcontainers per avviare un'istanza
-PostgreSQL effimera (richiede Docker attivo):
+Integration tests use the `test` profile and Testcontainers to spin up an ephemeral
+PostgreSQL instance (requires Docker to be running):
 
 ```bash
 mvn test
 ```
 
-## Profili applicativi
+## Application profiles
 
-| Profilo | Descrizione                                              |
-|---------|-----------------------------------------------------------|
-| `dev`   | PostgreSQL locale (Docker Compose), per lo sviluppo       |
-| `test`  | PostgreSQL avviato dinamicamente via Testcontainers        |
+| Profile | Description                                          |
+|---------|-------------------------------------------------------|
+| `dev`   | Local PostgreSQL (Docker Compose), for development     |
+| `test`  | PostgreSQL started dynamically via Testcontainers       |
 
 ## Roadmap
 
-- [ ] Modello di dominio per `account` e `transaction`
-- [ ] Migrazioni Flyway per lo schema del ledger
-- [ ] Autenticazione JWT e gestione utenti
-- [ ] Audit trail delle operazioni
-- [ ] Documentazione OpenAPI degli endpoint
+- [ ] Domain model for `account` and `transaction`
+- [ ] Flyway migrations for the ledger schema
+- [ ] JWT authentication and user management
+- [ ] Audit trail for operations
+- [ ] OpenAPI documentation for endpoints
