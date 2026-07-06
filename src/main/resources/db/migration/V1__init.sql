@@ -1,0 +1,2 @@
+-- Baseline migration. Schema for account/transaction/audit domains
+-- will be introduced in subsequent migrations once entities are defined.
