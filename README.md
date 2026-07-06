@@ -4,8 +4,8 @@ Scaffolding for a core banking ledger service, built with Spring Boot 3 and Java
 The project will expose REST APIs for managing accounts, transactions and audit trails,
 with JWT-based authentication and PostgreSQL persistence.
 
-> Current status: technical scaffolding only (build, configuration, package structure).
-> No domain logic has been implemented yet.
+> Current status: initial `account`/`customer` domain model (entities, repositories,
+> not-found exceptions). No REST endpoints or transaction logic yet.
 
 ## Tech stack
 
@@ -77,8 +77,10 @@ mvn test
 
 ## Roadmap
 
-- [ ] Domain model for `account` and `transaction`
-- [ ] Flyway migrations for the ledger schema
+- [x] Domain model for `account`/`customer` (entities, repositories, not-found exceptions)
+- [x] Flyway migration for the `customers`/`accounts` schema
+- [ ] Domain model for `transaction`
+- [ ] REST endpoints for account/customer management
 - [ ] JWT authentication and user management
 - [ ] Audit trail for operations
 - [ ] OpenAPI documentation for endpoints
