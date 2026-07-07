@@ -5,6 +5,40 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.0] - 2026-07-07
+
+### Added
+- Immutable audit trail: `AuditLog` entity (JSON `details` column), recorded via a centralized
+  `AuditEvent` / `AuditEventListener` mechanism for account creation, account status changes,
+  transfer success/failure, and login success/failure. `AuditLogRepository` deliberately
+  extends the bare `Repository` interface and exposes no update or delete operation anywhere.
+- `POST /accounts` (open an account) and `PUT /accounts/{id}/status` (block/close/reactivate),
+  staff-only, both auditable operations that previously had no endpoint.
+- Full springdoc-openapi documentation: descriptions and request/response examples for every
+  endpoint, documented error responses (400/401/403/404/409), and a `bearerAuth` JWT security
+  scheme.
+- GitHub Actions CI pipeline (`.github/workflows/ci.yml`): builds the project and runs the full
+  test suite (including Testcontainers-based integration tests) on every push and on every pull
+  request targeting `main`.
+- Complete README: architecture section (double-entry bookkeeping, idempotency, optimistic
+  locking, audit trail), local setup instructions, example curl requests, and a CI status badge.
+- `EmailAlreadyInUseException` (409) so creating a user with a duplicate email fails clearly
+  instead of with an unhandled error; a `DataIntegrityViolationException` handler as a safety
+  net for the same case under concurrent requests.
+
+### Changed
+- `AccountRepository.findByCustomerId` now fetches the customer eagerly (`@EntityGraph`) to
+  avoid an N+1 query.
+- `AccountService.createAccount` / `updateStatus` and `UserService.createUser` / `changeRole`
+  now have explicit `@Transactional` boundaries.
+- Audit events are now recorded via `@TransactionalEventListener(fallbackExecution = true)`
+  instead of a plain event listener: an event published from inside an already-open transaction
+  is only recorded after that transaction commits (so a rolled-back operation can never produce
+  a misleading audit entry), while an event published with no ongoing transaction (e.g. a
+  failed login) is still recorded immediately.
+- `TokenResponse` and `RefreshRequest` now mask their token fields in `toString()`, so a raw
+  JWT can never leak into a log line through an accidental `toString()` call.
+
 ## [0.4.0] - 2026-07-07
 
 ### Added

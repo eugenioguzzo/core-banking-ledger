@@ -1,8 +1,10 @@
 package com.eugeniokg.corebankingledger.common;
 
+import com.eugeniokg.corebankingledger.security.EmailAlreadyInUseException;
 import com.eugeniokg.corebankingledger.security.InvalidCredentialsException;
 import com.eugeniokg.corebankingledger.security.InvalidTokenException;
 import com.eugeniokg.corebankingledger.transaction.InsufficientBalanceException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -41,6 +43,18 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(InvalidTokenException.class)
     public ResponseEntity<ErrorResponse> handleInvalidToken(InvalidTokenException exception) {
         return errorResponse(HttpStatus.UNAUTHORIZED, exception.getMessage());
+    }
+
+    @ExceptionHandler(EmailAlreadyInUseException.class)
+    public ResponseEntity<ErrorResponse> handleEmailAlreadyInUse(EmailAlreadyInUseException exception) {
+        return errorResponse(HttpStatus.CONFLICT, exception.getMessage());
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException exception) {
+        // Safety net for a unique-constraint race that slips past an application-level check
+        // (e.g. two concurrent requests creating a user with the same email).
+        return errorResponse(HttpStatus.CONFLICT, "The request conflicts with existing data");
     }
 
     @ExceptionHandler(MissingRequestHeaderException.class)

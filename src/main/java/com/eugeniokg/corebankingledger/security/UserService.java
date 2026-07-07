@@ -3,6 +3,7 @@ package com.eugeniokg.corebankingledger.security;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
@@ -20,8 +21,12 @@ public class UserService {
         this.currentUserProvider = currentUserProvider;
     }
 
+    @Transactional
     public UserResponse createUser(CreateUserRequest request) {
         assertCanAssignRole(request.role());
+        if (userRepository.findByEmail(request.email()).isPresent()) {
+            throw new EmailAlreadyInUseException(request.email());
+        }
 
         User user = new User();
         user.setEmail(request.email());
@@ -33,6 +38,7 @@ public class UserService {
         return UserResponse.from(user);
     }
 
+    @Transactional
     public UserResponse changeRole(UUID userId, ChangeRoleRequest request) {
         assertCanAssignRole(request.role());
 
