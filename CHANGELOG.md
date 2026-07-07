@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] - 2026-07-07
+
+### Fixed
+- `ProdDataSourceConfig` produced a JDBC URL with port `-1` (rejected by the PostgreSQL
+  driver) when `DATABASE_URL` had no explicit port, as with Render's internal database
+  hostname (e.g. `postgres://user:pass@dpg-xxxx-a/dbname`). `URI.getPort()` returns `-1` in
+  that case; it now falls back to PostgreSQL's default port, 5432. Added a unit test for a
+  `DATABASE_URL` without an explicit port, alongside the existing one that has one.
+
 ## [1.1.0] - 2026-07-07
 
 ### Added
