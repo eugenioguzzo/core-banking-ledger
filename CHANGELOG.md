@@ -5,6 +5,34 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-07-07
+
+### Added
+- JWT authentication: `POST /auth/login` (email/password) issues a short-lived access token
+  (default 15 minutes) and a longer-lived refresh token (default 7 days); `POST /auth/refresh`
+  exchanges a valid refresh token for a new access token. Both lifetimes and the signing secret
+  are configurable via `app.security.jwt.*` in `application.yml`.
+- Role-based authorization with `CUSTOMER`, `OPERATOR` and `ADMIN` roles, enforced with
+  `@PreAuthorize` at the endpoint level.
+- `POST /users` and `PUT /users/{id}/role` to create users and change roles; only an ADMIN may
+  assign the ADMIN role, enforced both by `@PreAuthorize` and, independently, in `UserService` -
+  an OPERATOR calling either endpoint with `role=ADMIN` is rejected with 403.
+- Service-layer ownership checks (`AccountService.findAccessibleById`,
+  `TransactionService.transfer`): a CUSTOMER can only view or transfer from their own accounts,
+  even if they know another account's id - this is checked in the service layer, not only via
+  `@PreAuthorize`.
+- Centralized 401 vs. 403 handling: `RestAuthenticationEntryPoint` (missing/invalid/expired
+  token) and `RestAccessDeniedHandler` (authenticated but not allowed) return consistent JSON
+  error bodies for both `@PreAuthorize` denials and explicit service-layer checks.
+- Passwords are hashed with BCrypt and never stored, returned or logged in plain text; a failed
+  login always returns the same generic message regardless of whether the email is registered,
+  the password is wrong, or the account is disabled.
+- `GET /accounts/{id}` endpoint to view a single account (subject to the ownership check above).
+- Flyway migration `V3__users.sql` creating the `users` table.
+- Integration tests covering login/token issuance, cross-customer account access (403), missing/
+  invalid/expired tokens (401), the refresh flow, and an OPERATOR failing to create or promote a
+  user to ADMIN.
+
 ## [0.3.0] - 2026-07-07
 
 ### Added
