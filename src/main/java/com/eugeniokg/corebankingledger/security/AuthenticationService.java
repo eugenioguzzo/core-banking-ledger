@@ -1,11 +1,15 @@
 package com.eugeniokg.corebankingledger.security;
 
+import com.eugeniokg.corebankingledger.audit.AuditEvent;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.stereotype.Service;
+
+import java.util.Map;
 
 @Service
 public class AuthenticationService {
@@ -14,13 +18,16 @@ public class AuthenticationService {
     private final UserRepository userRepository;
     private final JwtService jwtService;
     private final JwtProperties jwtProperties;
+    private final ApplicationEventPublisher eventPublisher;
 
     public AuthenticationService(AuthenticationManager authenticationManager, UserRepository userRepository,
-                                  JwtService jwtService, JwtProperties jwtProperties) {
+                                  JwtService jwtService, JwtProperties jwtProperties,
+                                  ApplicationEventPublisher eventPublisher) {
         this.authenticationManager = authenticationManager;
         this.userRepository = userRepository;
         this.jwtService = jwtService;
         this.jwtProperties = jwtProperties;
+        this.eventPublisher = eventPublisher;
     }
 
     public TokenResponse login(LoginRequest request) {
@@ -28,6 +35,9 @@ public class AuthenticationService {
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(request.email(), request.password()));
         } catch (AuthenticationException e) {
+            // The attempted email is recorded for security monitoring even though the client
+            // never learns whether it belongs to a real account (see InvalidCredentialsException).
+            eventPublisher.publishEvent(new AuditEvent(request.email(), "LOGIN_FAILURE", "User", null, Map.of()));
             throw new InvalidCredentialsException();
         }
 
@@ -35,6 +45,9 @@ public class AuthenticationService {
         // just succeeded against it.
         User user = userRepository.findByEmail(request.email())
                 .orElseThrow(InvalidCredentialsException::new);
+
+        eventPublisher.publishEvent(new AuditEvent(user.getEmail(), "LOGIN_SUCCESS", "User",
+                user.getId().toString(), Map.of()));
 
         return issueTokens(user);
     }

@@ -1,72 +1,179 @@
 # core-banking-ledger
 
-Scaffolding for a core banking ledger service, built with Spring Boot 3 and Java 21.
-The project will expose REST APIs for managing accounts, transactions and audit trails,
-with JWT-based authentication and PostgreSQL persistence.
+[![CI](https://github.com/eugenioguzzo/core-banking-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/eugenioguzzo/core-banking-ledger/actions/workflows/ci.yml)
 
-> Current status: `account`/`customer` domain model, a double-entry `transaction` ledger with
-> idempotent, concurrency-safe transfers, and JWT authentication with role-based authorization
-> (`CUSTOMER`/`OPERATOR`/`ADMIN`).
+A core banking ledger service built with Spring Boot 3 and Java 21. It models customers,
+accounts and money transfers as a **double-entry bookkeeping ledger**, exposed through a REST
+API secured with JWT authentication and role-based authorization, with every key operation
+recorded in an immutable audit trail.
+
+This project is a portfolio piece: it is not connected to a real payment network or bank, but
+its domain logic (ledger integrity, idempotency, concurrency control, authorization boundaries
+and auditability) is built to the same standards a real banking backend would need.
 
 ## Tech stack
 
 - Java 21
 - Spring Boot 3 (Web, Data JPA, Security, Validation)
 - PostgreSQL + Flyway (schema migrations)
+- JWT (JJWT) authentication with BCrypt password hashing
 - springdoc-openapi (Swagger UI)
-- JJWT (JWT token handling)
 - Testcontainers (integration tests against a real PostgreSQL instance)
-- Lombok
+- GitHub Actions (CI)
 - Maven
 
 ## Package structure
 
 ```
 com.eugeniokg.corebankingledger
-├── config       # application configuration (beans, OpenAPI, etc.)
-├── security     # authentication, authorization, JWT
-├── account      # account domain
-├── transaction  # transaction/ledger movement domain
-├── audit        # audit trail and compliance
-└── common       # shared building blocks (base entities, exceptions, utilities)
+├── config       # application configuration (OpenAPI, etc.)
+├── security     # authentication, authorization, JWT, users
+├── account      # customer and account domain
+├── transaction  # double-entry ledger and transfers
+├── audit        # immutable audit trail
+└── common       # shared building blocks (base exceptions, error responses, utilities)
 ```
 
-## Development setup
+## Architecture
+
+### Double-entry bookkeeping
+
+An account's balance is never written to directly by application logic. Every transfer
+(`POST /transactions`) creates one `Transaction` record plus exactly two immutable
+`LedgerEntry` records: a `DEBIT` on the source account and a matching `CREDIT` on the
+destination account, both for the same amount. The account's `balance` column is a cache that
+is only ever updated as a side effect of recording these entries, inside the same database
+transaction - so the balance can always be independently reconstructed and verified from the
+ledger entries, and a partial write (entries without a balance update, or vice versa) is not
+possible. See `LedgerTransferExecutor`.
+
+### Idempotency
+
+Every transfer request carries a client-generated `Idempotency-Key` header. The first request
+with a given key executes the transfer and stores the key on the resulting `Transaction`
+(a unique database column); any later request with the same key - including a genuine
+concurrent duplicate submission - returns the original result instead of moving money twice.
+See `TransactionService`.
+
+### Optimistic locking for concurrency control
+
+`Account` carries a JPA `@Version` column. Two transfers that touch the same account
+concurrently will cause one of them to fail with an optimistic locking conflict at commit time
+rather than silently overwriting the other's balance update (a "lost update"). `TransactionService`
+catches this conflict and retries the whole transfer attempt (re-reading fresh account state)
+with a configurable exponential backoff, so the caller sees a successful response without
+needing to implement retry logic itself. See `app.transaction.retry.*` in `application.yml`.
+
+### Audit trail
+
+Key operations - account creation, account status changes (block/close/reactivate), transfers
+(both completed and failed), and login attempts (both successful and failed) - publish an
+`AuditEvent` that a single centralized listener (`AuditEventListener`) turns into an `AuditLog`
+row. The audit trail is append-only: `AuditLogRepository` deliberately extends the bare
+`Repository` marker interface (not `JpaRepository`) and declares only `save` and read methods -
+no update or delete operation exists anywhere in the codebase for this entity. An event
+published from inside an already-open transaction (e.g. account creation) is only recorded
+after that transaction commits, so a rolled-back operation never leaves a misleading audit
+entry; an event published for an operation that has no wrapping transaction (e.g. a failed
+login) is recorded immediately, in its own independent transaction, so it is never lost even
+though the triggering operation itself did not persist anything.
+
+### Authentication and authorization
+
+- `POST /auth/login` returns a short-lived access token (default 15 minutes) and a longer-lived
+  refresh token (default 7 days); `POST /auth/refresh` exchanges a valid refresh token for a new
+  access token. Both lifetimes and the signing secret are configurable via `app.security.jwt.*`.
+  Access and refresh tokens carry a `type` claim and are never interchangeable.
+- Three roles: `CUSTOMER` (can only view or transfer from their own accounts), `OPERATOR` (can
+  manage accounts and users, but can never create or promote a user to `ADMIN`), and `ADMIN`
+  (full access).
+- Authorization is checked twice: with `@PreAuthorize` at the endpoint, and again in the service
+  layer (`AccountService`, `TransactionService`, `UserService`) - so a customer can never reach
+  another customer's account, and an operator can never mint an admin, even by calling the
+  service layer in a way that bypasses the controller's own check.
+- Passwords are hashed with BCrypt and never stored, returned, or logged in plain text. A failed
+  login always returns the same generic error, whether the email is unknown, the password is
+  wrong, or the account is disabled.
+- A missing, invalid or expired token yields `401 Unauthorized`; an authenticated request that
+  isn't allowed yields `403 Forbidden` - both handled centrally and consistently, whether the
+  denial comes from `@PreAuthorize` or from an explicit check in a service.
+
+## Local setup
 
 ### Prerequisites
 
 - JDK 21
-- Docker (for local PostgreSQL and Testcontainers tests)
-- Maven (or the `mvnw` wrapper included in the project)
+- Docker (for local PostgreSQL and for the Testcontainers-based integration tests)
+- Maven (or the `mvnw` / `mvnw.cmd` wrapper included in the project)
 
-### Starting the local database
+### Start the local database
 
 ```bash
 docker compose up -d
 ```
 
-Starts a PostgreSQL container on `localhost:5432` with:
-- database: `core_banking_ledger`
-- user: `ledger`
-- password: `ledger`
+Starts a PostgreSQL container on `localhost:5432` with database `core_banking_ledger`, user
+`ledger`, password `ledger`.
 
-### Running the application
+### Run the application
 
 ```bash
 mvn spring-boot:run
 ```
 
-The `dev` profile is active by default, connecting to the local PostgreSQL instance started
-via Docker Compose. The API will be available at `http://localhost:8080` and the OpenAPI
-documentation at `http://localhost:8080/swagger-ui.html`.
+The `dev` profile is active by default and connects to the PostgreSQL instance started above.
+The API is available at `http://localhost:8080`; interactive API documentation (Swagger UI) is
+at `http://localhost:8080/swagger-ui.html`.
 
-### Tests
-
-Integration tests use the `test` profile and Testcontainers to spin up an ephemeral
-PostgreSQL instance (requires Docker to be running):
+### Run the tests
 
 ```bash
 mvn test
+```
+
+This runs both plain unit tests and the Testcontainers-based integration tests (which start
+their own ephemeral PostgreSQL container, independent of the one from `docker compose`), so
+Docker must be running. The same command is what CI runs on every push and on every pull
+request targeting `main` (see `.github/workflows/ci.yml`).
+
+## Example requests
+
+Every example below assumes the app is running locally on port 8080. Replace ids and tokens
+with real values returned by the previous call.
+
+**Log in and obtain tokens:**
+
+```bash
+curl -X POST http://localhost:8080/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "jane.doe@example.com", "password": "correct-horse-battery-staple"}'
+```
+
+**Refresh an access token:**
+
+```bash
+curl -X POST http://localhost:8080/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{"refreshToken": "<refreshToken from login>"}'
+```
+
+**Open a new account for a customer (staff only - OPERATOR or ADMIN token):**
+
+```bash
+curl -X POST http://localhost:8080/accounts \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <accessToken>" \
+  -d '{"customerId": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "currency": "EUR"}'
+```
+
+**Transfer funds between two accounts:**
+
+```bash
+curl -X POST http://localhost:8080/transactions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Idempotency-Key: 5f8d3c2a-1b4e-4f6a-9c3d-2e1f4a5b6c7d" \
+  -d '{"sourceAccountId": "<your account id>", "destinationAccountId": "<destination account id>", "amount": 100.00, "description": "Rent payment"}'
 ```
 
 ## Application profiles
@@ -76,50 +183,13 @@ mvn test
 | `dev`   | Local PostgreSQL (Docker Compose), for development     |
 | `test`  | PostgreSQL started dynamically via Testcontainers       |
 
-## Transfers
-
-`POST /transactions` moves money between two accounts using double-entry bookkeeping: every
-transfer creates a `Transaction` plus two `LedgerEntry` records (a `DEBIT` on the source account
-and a `CREDIT` on the destination account). Account balances are a cache that is only ever
-updated as a side effect of recording these entries.
-
-- Send an `Idempotency-Key` header with every request. Repeating the same key returns the
-  original result instead of executing the transfer again, even under concurrent duplicate
-  submissions.
-- Concurrent transfers touching the same account are protected by optimistic locking
-  (`@Version` on `Account`) and are retried automatically with a configurable backoff
-  (`app.transaction.retry.*` in `application.yml`) if they conflict.
-- A transfer that would leave the source account with a negative balance fails with a
-  `409 Conflict` and a clear error message; nothing is persisted for that attempt.
-
-## Authentication and authorization
-
-- `POST /auth/login` with `{ "email": "...", "password": "..." }` returns an access token
-  (default 15 minutes) and a refresh token (default 7 days), both configurable via
-  `app.security.jwt.*` in `application.yml`.
-- `POST /auth/refresh` with `{ "refreshToken": "..." }` returns a new access token. Access and
-  refresh tokens are never interchangeable, even though both are signed with the same key.
-- Send `Authorization: Bearer <accessToken>` on every other request.
-- Roles:
-  - `CUSTOMER` - can only view or transfer from their own accounts, even if they know another
-    account's id. Enforced both by `@PreAuthorize` and independently in the service layer
-    (`AccountService`, `TransactionService`).
-  - `OPERATOR` - can manage accounts and users, but can never create or promote a user to
-    `ADMIN`.
-  - `ADMIN` - full access, including assigning the `ADMIN` role.
-- `POST /users` creates a user; `PUT /users/{id}/role` changes a user's role.
-- Passwords are hashed with BCrypt and never stored, returned or logged in plain text. A failed
-  login always returns the same generic error, regardless of whether the email exists.
-- A missing, invalid or expired token yields `401 Unauthorized`; an authenticated request that
-  isn't allowed yields `403 Forbidden` - both as a consistent JSON error body.
-
 ## Roadmap
 
 - [x] Domain model for `account`/`customer` (entities, repositories, not-found exceptions)
-- [x] Flyway migration for the `customers`/`accounts` schema
 - [x] Domain model for `transaction` (double-entry ledger, idempotency, optimistic locking)
 - [x] `POST /transactions` endpoint
 - [x] JWT authentication and role-based authorization
-- [ ] REST endpoints for full account/customer management (beyond `GET /accounts/{id}`)
-- [ ] Audit trail for operations
-- [ ] OpenAPI documentation for endpoints
+- [x] Immutable audit trail
+- [x] OpenAPI documentation with request/response examples and documented error responses
+- [x] CI pipeline
+- [ ] REST endpoints for full customer management (beyond account creation/status/lookup)
