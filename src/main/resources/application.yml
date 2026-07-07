@@ -10,6 +10,12 @@ app:
       max-attempts: 5
       initial-backoff: 50ms
       backoff-multiplier: 2.0
+  security:
+    jwt:
+      # Override with an environment-specific secret (at least 32 bytes) in every real deployment.
+      secret: ${JWT_SECRET:dev-only-secret-key-change-me-before-any-real-deployment!!}
+      access-token-ttl: 15m
+      refresh-token-ttl: 7d
 
 ---
 spring:

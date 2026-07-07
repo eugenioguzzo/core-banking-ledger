@@ -1,5 +1,7 @@
 package com.eugeniokg.corebankingledger.common;
 
+import com.eugeniokg.corebankingledger.security.InvalidCredentialsException;
+import com.eugeniokg.corebankingledger.security.InvalidTokenException;
 import com.eugeniokg.corebankingledger.transaction.InsufficientBalanceException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -29,6 +31,16 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleOptimisticLockFailure(ObjectOptimisticLockingFailureException exception) {
         return errorResponse(HttpStatus.CONFLICT,
                 "The request could not be completed due to a concurrent update; please retry");
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidCredentials(InvalidCredentialsException exception) {
+        return errorResponse(HttpStatus.UNAUTHORIZED, exception.getMessage());
+    }
+
+    @ExceptionHandler(InvalidTokenException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidToken(InvalidTokenException exception) {
+        return errorResponse(HttpStatus.UNAUTHORIZED, exception.getMessage());
     }
 
     @ExceptionHandler(MissingRequestHeaderException.class)

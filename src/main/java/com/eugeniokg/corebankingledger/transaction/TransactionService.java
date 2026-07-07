@@ -1,5 +1,6 @@
 package com.eugeniokg.corebankingledger.transaction;
 
+import com.eugeniokg.corebankingledger.account.AccountService;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
@@ -18,16 +19,24 @@ public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final LedgerTransferExecutor ledgerTransferExecutor;
     private final TransactionRetryProperties retryProperties;
+    private final AccountService accountService;
 
     public TransactionService(TransactionRepository transactionRepository,
                                LedgerTransferExecutor ledgerTransferExecutor,
-                               TransactionRetryProperties retryProperties) {
+                               TransactionRetryProperties retryProperties,
+                               AccountService accountService) {
         this.transactionRepository = transactionRepository;
         this.ledgerTransferExecutor = ledgerTransferExecutor;
         this.retryProperties = retryProperties;
+        this.accountService = accountService;
     }
 
     public TransferResponse transfer(TransferRequest request, String idempotencyKey) {
+        // Checked unconditionally, even for a request that turns out to be a repeated
+        // idempotency key, so a customer can never fish for another customer's transfer
+        // result by guessing an idempotency key.
+        accountService.findAccessibleById(request.sourceAccountId());
+
         return transactionRepository.findByIdempotencyKey(idempotencyKey)
                 .map(TransferResponse::from)
                 .orElseGet(() -> TransferResponse.from(executeWithRetry(request, idempotencyKey)));
