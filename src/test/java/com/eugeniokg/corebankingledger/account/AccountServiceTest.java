@@ -26,7 +26,11 @@ class AccountServiceTest {
     @Test
     void findByIdReturnsAccountWhenPresent() {
         UUID id = UUID.randomUUID();
-        Account account = Account.builder().id(id).balance(BigDecimal.TEN).currency("EUR").status(AccountStatus.ACTIVE).build();
+        Account account = new Account();
+        account.setId(id);
+        account.setBalance(BigDecimal.TEN);
+        account.setCurrency("EUR");
+        account.setStatus(AccountStatus.ACTIVE);
         when(accountRepository.findById(id)).thenReturn(Optional.of(account));
 
         Account result = accountService.findById(id);
