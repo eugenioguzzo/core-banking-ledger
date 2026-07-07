@@ -4,8 +4,9 @@ Scaffolding for a core banking ledger service, built with Spring Boot 3 and Java
 The project will expose REST APIs for managing accounts, transactions and audit trails,
 with JWT-based authentication and PostgreSQL persistence.
 
-> Current status: initial `account`/`customer` domain model (entities, repositories,
-> not-found exceptions). No REST endpoints or transaction logic yet.
+> Current status: `account`/`customer` domain model plus a double-entry `transaction` ledger
+> with idempotent, concurrency-safe transfers via `POST /transactions`. JWT authentication is
+> not implemented yet (all endpoints are currently open).
 
 ## Tech stack
 
@@ -75,11 +76,28 @@ mvn test
 | `dev`   | Local PostgreSQL (Docker Compose), for development     |
 | `test`  | PostgreSQL started dynamically via Testcontainers       |
 
+## Transfers
+
+`POST /transactions` moves money between two accounts using double-entry bookkeeping: every
+transfer creates a `Transaction` plus two `LedgerEntry` records (a `DEBIT` on the source account
+and a `CREDIT` on the destination account). Account balances are a cache that is only ever
+updated as a side effect of recording these entries.
+
+- Send an `Idempotency-Key` header with every request. Repeating the same key returns the
+  original result instead of executing the transfer again, even under concurrent duplicate
+  submissions.
+- Concurrent transfers touching the same account are protected by optimistic locking
+  (`@Version` on `Account`) and are retried automatically with a configurable backoff
+  (`app.transaction.retry.*` in `application.yml`) if they conflict.
+- A transfer that would leave the source account with a negative balance fails with a
+  `409 Conflict` and a clear error message; nothing is persisted for that attempt.
+
 ## Roadmap
 
 - [x] Domain model for `account`/`customer` (entities, repositories, not-found exceptions)
 - [x] Flyway migration for the `customers`/`accounts` schema
-- [ ] Domain model for `transaction`
+- [x] Domain model for `transaction` (double-entry ledger, idempotency, optimistic locking)
+- [x] `POST /transactions` endpoint
 - [ ] REST endpoints for account/customer management
 - [ ] JWT authentication and user management
 - [ ] Audit trail for operations

@@ -25,7 +25,10 @@ class CustomerServiceTest {
     @Test
     void findByIdReturnsCustomerWhenPresent() {
         UUID id = UUID.randomUUID();
-        Customer customer = Customer.builder().id(id).firstName("Jane").lastName("Doe").build();
+        Customer customer = new Customer();
+        customer.setId(id);
+        customer.setFirstName("Jane");
+        customer.setLastName("Doe");
         when(customerRepository.findById(id)).thenReturn(Optional.of(customer));
 
         Customer result = customerService.findById(id);

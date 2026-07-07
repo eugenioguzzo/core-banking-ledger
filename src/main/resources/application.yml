@@ -4,6 +4,13 @@ spring:
   profiles:
     active: dev
 
+app:
+  transaction:
+    retry:
+      max-attempts: 5
+      initial-backoff: 50ms
+      backoff-multiplier: 2.0
+
 ---
 spring:
   config:
