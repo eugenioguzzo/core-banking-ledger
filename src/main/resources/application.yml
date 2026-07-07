@@ -17,6 +17,30 @@ app:
       access-token-ttl: 15m
       refresh-token-ttl: 7d
 
+server:
+  # Render (and similar PaaS providers) assign the port to listen on via this env var.
+  port: ${PORT:8080}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    root: INFO
+    com.eugeniokg.corebankingledger: DEBUG
+
 ---
 spring:
   config:
@@ -36,20 +60,6 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
-server:
-  port: 8080
-
-springdoc:
-  swagger-ui:
-    path: /swagger-ui.html
-  api-docs:
-    path: /v3/api-docs
-
-logging:
-  level:
-    root: INFO
-    com.eugeniokg.corebankingledger: DEBUG
-
 ---
 spring:
   config:
@@ -67,3 +77,24 @@ spring:
 # Note: datasource connection details for the "test" profile are provided
 # dynamically at runtime by Testcontainers (see test support classes),
 # so no fixed jdbc url/credentials are configured here.
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+# Note: the actual DataSource for "prod" is built programmatically, in
+# ProdDataSourceConfig, from the DATABASE_URL environment variable (the connection string
+# Render provides for its managed Postgres add-on) or, if that is not set, from
+# DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD. This extra step is necessary because the
+# PostgreSQL JDBC driver does not understand the postgres://user:password@host:port/db
+# connection-string format that managed providers hand out - see that class for details.
