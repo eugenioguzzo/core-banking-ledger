@@ -7,6 +7,11 @@ import com.eugeniokg.corebankingledger.account.AccountStatus;
 import com.eugeniokg.corebankingledger.account.Customer;
 import com.eugeniokg.corebankingledger.account.CustomerRepository;
 import com.eugeniokg.corebankingledger.common.ErrorResponse;
+import com.eugeniokg.corebankingledger.security.LoginRequest;
+import com.eugeniokg.corebankingledger.security.Role;
+import com.eugeniokg.corebankingledger.security.TokenResponse;
+import com.eugeniokg.corebankingledger.security.User;
+import com.eugeniokg.corebankingledger.security.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.client.TestRestTemplate;
@@ -14,6 +19,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -28,6 +34,8 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class TransactionControllerIntegrationTests extends IntegrationTestSupport {
+
+    private static final String PASSWORD = "correct-horse-battery-staple";
 
     @Autowired
     private TestRestTemplate restTemplate;
@@ -44,11 +52,18 @@ class TransactionControllerIntegrationTests extends IntegrationTestSupport {
     @Autowired
     private LedgerEntryRepository ledgerEntryRepository;
 
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
     @Test
     void concurrentTransfersFromSameAccountDoNotLoseUpdates() throws Exception {
         Account source = createAccount(new BigDecimal("1000.00"));
         Account destinationA = createAccount(BigDecimal.ZERO);
         Account destinationB = createAccount(BigDecimal.ZERO);
+        String token = loginAs(source);
 
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
@@ -58,13 +73,13 @@ class TransactionControllerIntegrationTests extends IntegrationTestSupport {
             ready.countDown();
             start.await();
             return postTransfer(source.getId(), destinationA.getId(), new BigDecimal("100.00"),
-                    "concurrent transfer to A", "concurrent-key-a-" + UUID.randomUUID());
+                    "concurrent transfer to A", "concurrent-key-a-" + UUID.randomUUID(), token);
         };
         Callable<ResponseEntity<TransferResponse>> transferToB = () -> {
             ready.countDown();
             start.await();
             return postTransfer(source.getId(), destinationB.getId(), new BigDecimal("200.00"),
-                    "concurrent transfer to B", "concurrent-key-b-" + UUID.randomUUID());
+                    "concurrent transfer to B", "concurrent-key-b-" + UUID.randomUUID(), token);
         };
 
         Future<ResponseEntity<TransferResponse>> futureA = executor.submit(transferToA);
@@ -96,12 +111,13 @@ class TransactionControllerIntegrationTests extends IntegrationTestSupport {
     void duplicateIdempotencyKeyExecutesTransferOnlyOnce() {
         Account source = createAccount(new BigDecimal("500.00"));
         Account destination = createAccount(BigDecimal.ZERO);
+        String token = loginAs(source);
         String idempotencyKey = "idempotency-key-" + UUID.randomUUID();
 
         ResponseEntity<TransferResponse> first = postTransfer(source.getId(), destination.getId(),
-                new BigDecimal("50.00"), "first attempt", idempotencyKey);
+                new BigDecimal("50.00"), "first attempt", idempotencyKey, token);
         ResponseEntity<TransferResponse> second = postTransfer(source.getId(), destination.getId(),
-                new BigDecimal("50.00"), "second attempt", idempotencyKey);
+                new BigDecimal("50.00"), "second attempt", idempotencyKey, token);
 
         assertThat(first.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(second.getStatusCode()).isEqualTo(HttpStatus.CREATED);
@@ -123,9 +139,10 @@ class TransactionControllerIntegrationTests extends IntegrationTestSupport {
     void transferWithInsufficientBalanceFailsWithClearError() {
         Account source = createAccount(new BigDecimal("10.00"));
         Account destination = createAccount(BigDecimal.ZERO);
+        String token = loginAs(source);
 
         ResponseEntity<ErrorResponse> response = postTransferExpectingError(source.getId(), destination.getId(),
-                new BigDecimal("100.00"), "too much", "insufficient-key-" + UUID.randomUUID());
+                new BigDecimal("100.00"), "too much", "insufficient-key-" + UUID.randomUUID(), token);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(response.getBody().message()).contains("insufficient balance");
@@ -149,29 +166,49 @@ class TransactionControllerIntegrationTests extends IntegrationTestSupport {
         account.setBalance(balance);
         account.setCurrency("EUR");
         account.setStatus(AccountStatus.ACTIVE);
-        return accountRepository.save(account);
+        account = accountRepository.save(account);
+
+        User user = new User();
+        user.setEmail(customer.getEmail());
+        user.setPasswordHash(passwordEncoder.encode(PASSWORD));
+        user.setRole(Role.CUSTOMER);
+        user.setCustomerId(customer.getId());
+        user.setEnabled(true);
+        userRepository.save(user);
+
+        return account;
+    }
+
+    private String loginAs(Account account) {
+        String email = account.getCustomer().getEmail();
+        ResponseEntity<TokenResponse> response = restTemplate.postForEntity(
+                "/auth/login", new LoginRequest(email, PASSWORD), TokenResponse.class);
+        return response.getBody().accessToken();
     }
 
     private ResponseEntity<TransferResponse> postTransfer(UUID sourceAccountId, UUID destinationAccountId,
-                                                            BigDecimal amount, String description, String idempotencyKey) {
+                                                            BigDecimal amount, String description,
+                                                            String idempotencyKey, String accessToken) {
         HttpEntity<TransferRequest> entity = requestEntity(sourceAccountId, destinationAccountId, amount,
-                description, idempotencyKey);
+                description, idempotencyKey, accessToken);
         return restTemplate.postForEntity("/transactions", entity, TransferResponse.class);
     }
 
     private ResponseEntity<ErrorResponse> postTransferExpectingError(UUID sourceAccountId, UUID destinationAccountId,
                                                                       BigDecimal amount, String description,
-                                                                      String idempotencyKey) {
+                                                                      String idempotencyKey, String accessToken) {
         HttpEntity<TransferRequest> entity = requestEntity(sourceAccountId, destinationAccountId, amount,
-                description, idempotencyKey);
+                description, idempotencyKey, accessToken);
         return restTemplate.postForEntity("/transactions", entity, ErrorResponse.class);
     }
 
     private HttpEntity<TransferRequest> requestEntity(UUID sourceAccountId, UUID destinationAccountId,
-                                                        BigDecimal amount, String description, String idempotencyKey) {
+                                                        BigDecimal amount, String description,
+                                                        String idempotencyKey, String accessToken) {
         TransferRequest request = new TransferRequest(sourceAccountId, destinationAccountId, amount, description);
         HttpHeaders headers = new HttpHeaders();
         headers.set("Idempotency-Key", idempotencyKey);
+        headers.setBearerAuth(accessToken);
         return new HttpEntity<>(request, headers);
     }
 }
