@@ -20,6 +20,19 @@ class ProdDataSourceConfigTest {
     }
 
     @Test
+    void defaultsToStandardPostgresPortWhenDatabaseUrlOmitsIt() {
+        // Render's internal database hostname (used for service-to-service connections)
+        // has no explicit port in its connection string - this must not become "-1".
+        var credentials = ProdDataSourceConfig.fromDatabaseUrl(
+                "postgres://ledger:s3cr3t@dpg-d96g1ce7r5hc738cp700-a/core_banking_ledger_db");
+
+        assertThat(credentials.jdbcUrl())
+                .isEqualTo("jdbc:postgresql://dpg-d96g1ce7r5hc738cp700-a:5432/core_banking_ledger_db");
+        assertThat(credentials.username()).isEqualTo("ledger");
+        assertThat(credentials.password()).isEqualTo("s3cr3t");
+    }
+
+    @Test
     void rejectsDatabaseUrlWithoutCredentials() {
         assertThatThrownBy(() -> ProdDataSourceConfig.fromDatabaseUrl("postgres://host:5432/db"))
                 .isInstanceOf(IllegalStateException.class);

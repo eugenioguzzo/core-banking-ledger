@@ -62,7 +62,10 @@ public class ProdDataSourceConfig {
         int separator = userInfo.indexOf(':');
         String username = userInfo.substring(0, separator);
         String password = userInfo.substring(separator + 1);
-        String jdbcUrl = "jdbc:postgresql://" + uri.getHost() + ":" + uri.getPort() + uri.getPath();
+        // URI.getPort() returns -1 when the URL has no explicit port (Render's internal
+        // database hostname, for example) - PostgreSQL's default port applies in that case.
+        int port = uri.getPort() == -1 ? 5432 : uri.getPort();
+        String jdbcUrl = "jdbc:postgresql://" + uri.getHost() + ":" + port + uri.getPath();
         return new JdbcCredentials(jdbcUrl, username, password);
     }
 
