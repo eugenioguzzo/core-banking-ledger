@@ -19,5 +19,8 @@ jobs:
           java-version: '21'
           cache: maven
 
+      - name: Ensure mvnw is executable
+        run: chmod +x mvnw
+
       - name: Build and run the full test suite
         run: ./mvnw --batch-mode --no-transfer-progress clean test
