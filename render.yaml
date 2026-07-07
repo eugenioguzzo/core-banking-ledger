@@ -1,0 +1,34 @@
+# Render Blueprint - see https://render.com/docs/blueprint-spec
+#
+# Deploys the app as a Docker web service on the free plan, backed by a free-tier managed
+# Postgres database. Free Postgres instances on Render expire after 30 days - see the
+# "Live Demo" section of the README for how to recreate the database and reseed demo data.
+
+databases:
+  - name: core-banking-ledger-db
+    plan: free
+    databaseName: core_banking_ledger
+    user: ledger
+
+services:
+  - name: core-banking-ledger
+    type: web
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+      # Must be set manually in the Render dashboard (Environment tab) - a long, random
+      # string (32+ bytes). Never commit a real secret here.
+      - key: JWT_SECRET
+        sync: false
+      # Render's managed Postgres connection string, in the form
+      # postgres://user:password@host:port/database - parsed by ProdDataSourceConfig into
+      # a proper JDBC datasource, since the PostgreSQL driver doesn't accept this format
+      # directly.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: core-banking-ledger-db
+          property: connectionString

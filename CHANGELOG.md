@@ -5,6 +5,27 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-07-07
+
+### Added
+- Multi-stage `Dockerfile`: a Maven build stage compiles the jar, and a lightweight
+  `eclipse-temurin:21-jre-alpine` runtime stage runs it as a non-root user. `JAVA_OPTS`
+  is tuned for a 512 MB container (`MaxRAMPercentage`, serial GC, capped metaspace/stack).
+- `render.yaml` Blueprint: a free-tier Postgres database plus a Docker-based free-plan web
+  service, wired together via `fromDatabase` and health-checked at `/actuator/health`.
+- A `prod` Spring profile with `server.port` read from the `PORT` environment variable and
+  a `ProdDataSourceConfig` that builds the JDBC datasource from `DATABASE_URL` (Render's
+  connection-string format) or, as a fallback, from separate
+  `DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_USER`/`DB_PASSWORD` variables - necessary because the
+  PostgreSQL JDBC driver does not accept credentials embedded in a connection URL.
+- Spring Boot Actuator, with only `/actuator/health` exposed and made public (no
+  authentication required), for Render's deployment health check.
+- `DemoDataSeeder`: seeds a couple of clearly-fake demo customers, accounts, a `CUSTOMER`
+  login and an `ADMIN` login on first boot under the `prod` profile, so the live deployment
+  is immediately explorable via Swagger UI. Idempotent - safe across restarts/redeploys.
+- README "Live Demo" section: the deployed URL, demo credentials, and the exact steps to
+  recreate the database and reseed data once Render's free 30-day Postgres trial expires.
+
 ## [1.0.0] - 2026-07-07
 
 ### Added

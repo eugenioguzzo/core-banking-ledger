@@ -11,6 +11,54 @@ This project is a portfolio piece: it is not connected to a real payment network
 its domain logic (ledger integrity, idempotency, concurrency control, authorization boundaries
 and auditability) is built to the same standards a real banking backend would need.
 
+## Live Demo
+
+The app is deployed on [Render](https://render.com) using the `Dockerfile` and `render.yaml`
+Blueprint in this repository.
+
+> Update this link once you deploy your own instance - Render assigns
+> `https://<service-name>.onrender.com` by default.
+
+- **App**: https://core-banking-ledger.onrender.com
+- **Swagger UI**: https://core-banking-ledger.onrender.com/swagger-ui.html
+
+The free instance spins down after a period of inactivity, so the first request after a while
+may take up to a minute while it wakes back up - just retry it.
+
+### Demo credentials
+
+On first boot, `DemoDataSeeder` (active only under the `prod` profile) seeds a couple of
+clearly-fake demo customers, accounts and users, so the API is explorable right away with no
+setup:
+
+| Role       | Email                    | Password       | Notes                                                          |
+|------------|--------------------------|----------------|------------------------------------------------------------------|
+| `CUSTOMER` | `alice.demo@example.com` | `DemoPass123!` | Owns an account with a 1000.00 EUR balance                       |
+| `ADMIN`    | `admin.demo@example.com` | `DemoPass123!` | Can open accounts, change account status, create/promote users   |
+
+A second demo customer, "Bob Demo", has a 500.00 EUR account with no login of its own - a
+handy destination account when trying `POST /transactions` as Alice.
+
+These accounts are fake, seeded purely for this demo - don't reuse this password anywhere else.
+
+### The free Postgres database expires after 30 days
+
+Render deletes free-tier PostgreSQL databases 30 days after creation. When that happens, the
+web service's health check starts failing because it can no longer reach the database. To fix
+it:
+
+1. In the Render dashboard, create a new free PostgreSQL database (delete the old, expired one
+   if it's still listed) - or, if you manage this deployment via the `render.yaml` Blueprint,
+   just re-sync the Blueprint and Render recreates it for you.
+2. Open the web service's **Environment** tab and confirm `DATABASE_URL` points at the new
+   database's connection string (re-syncing the Blueprint updates this automatically, since
+   it's wired via `fromDatabase`; if you set it up by hand, paste in the new connection string).
+3. Trigger a manual deploy (or wait for the next automatic one).
+
+That's the whole procedure - no manual reseeding step. On that startup, Flyway rebuilds the
+schema from scratch against the new, empty database (`src/main/resources/db/migration`), and
+`DemoDataSeeder` runs right after and reseeds the demo customers, accounts and users.
+
 ## Tech stack
 
 - Java 21
@@ -20,6 +68,7 @@ and auditability) is built to the same standards a real banking backend would ne
 - springdoc-openapi (Swagger UI)
 - Testcontainers (integration tests against a real PostgreSQL instance)
 - GitHub Actions (CI)
+- Docker, deployed to Render (CD)
 - Maven
 
 ## Package structure
@@ -178,10 +227,26 @@ curl -X POST http://localhost:8080/transactions \
 
 ## Application profiles
 
-| Profile | Description                                          |
-|---------|-------------------------------------------------------|
-| `dev`   | Local PostgreSQL (Docker Compose), for development     |
-| `test`  | PostgreSQL started dynamically via Testcontainers       |
+| Profile | Description                                                          |
+|---------|-------------------------------------------------------------------------|
+| `dev`   | Local PostgreSQL (Docker Compose), for development                       |
+| `test`  | PostgreSQL started dynamically via Testcontainers                        |
+| `prod`  | Reads connection details from environment variables; used by the Docker/Render deployment |
+
+### Building and running the Docker image locally
+
+```bash
+docker build -t core-banking-ledger .
+docker run --rm -p 8080:8080 \
+  -e SPRING_PROFILES_ACTIVE=prod \
+  -e JWT_SECRET=a-local-test-secret-at-least-32-bytes-long \
+  -e DATABASE_URL=postgres://ledger:ledger@host.docker.internal:5432/core_banking_ledger \
+  core-banking-ledger
+```
+
+This targets the `dev` Postgres instance started by `docker compose up -d` from the host
+machine (`host.docker.internal` resolves to the host from inside the container). `prod` builds
+its datasource from `DATABASE_URL` at startup - see `ProdDataSourceConfig`.
 
 ## Roadmap
 
@@ -192,4 +257,5 @@ curl -X POST http://localhost:8080/transactions \
 - [x] Immutable audit trail
 - [x] OpenAPI documentation with request/response examples and documented error responses
 - [x] CI pipeline
+- [x] Docker image and Render deployment (Blueprint, health check, demo data)
 - [ ] REST endpoints for full customer management (beyond account creation/status/lookup)
